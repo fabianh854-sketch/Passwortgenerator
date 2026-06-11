@@ -43,32 +43,6 @@ export const CONFIG = {
     ambiguous: /[Il1|O0o]/g
   },
 
-  // UI Konfiguration
-  THEMES: {
-    light: {
-      '--bg-color': '#f4f7f6',
-      '--card-bg': '#ffffff',
-      '--text-main': '#2d3436',
-      '--text-secondary': '#636e72',
-      '--accent': '#0984e3',
-      '--accent-hover': '#74b9ff',
-      '--border': '#dfe6e9',
-      '--input-bg': '#f1f2f6',
-      '--shadow': 'rgba(0, 0, 0, 0.05)'
-    },
-    dark: {
-      '--bg-color': '#1e1e1e',
-      '--card-bg': '#2d2d2d',
-      '--text-main': '#dfe6e9',
-      '--text-secondary': '#b2bec3',
-      '--accent': '#74b9ff',
-      '--accent-hover': '#0984e3',
-      '--border': '#404040',
-      '--input-bg': '#353b48',
-      '--shadow': 'rgba(0, 0, 0, 0.3)'
-    }
-  },
-
   // SVG Icons
   ICONS: {
     sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',

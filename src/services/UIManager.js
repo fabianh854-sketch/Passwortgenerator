@@ -1,206 +1,186 @@
 /**
  * UI Manager Service
- * Verwaltung der Benutzeroberfläche und Interaktionen
+ * Reiner Darstellungs-Layer ohne Business-Logik
+ * Kommuniziert ausschließlich über Events
  */
 import { CONFIG } from '../config/index.js'
-import { Events } from '../events/manager.js'
+import { Events, eventManager } from '../events/manager.js'
+import { createDOMProxy } from '../interfaces.js'
 
 export class UIManager {
-  constructor () {
-    this.passwordGenerator = null
-    this.themeManager = null
-    this.settingsService = null
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.dom - DOM-Proxy (optional)
+   */
+  constructor (deps = {}) {
+    this.dom = deps.dom || createDOMProxy()
     this.initialize()
   }
 
-  /**
-   * Initialisiert den UI Manager
-   */
   initialize () {
     this.setupEventListeners()
     this.updateUIElements()
   }
 
-  /**
-   * Setzt Event Listener für UI Interaktionen
-   */
   setupEventListeners () {
-    // Generieren Button
-    const generateBtn = document.querySelector(CONFIG.UI.generateBtnSelector)
+    const generateBtn = this.dom.query(CONFIG.UI.generateBtnSelector)
     if (generateBtn) {
-      generateBtn.addEventListener('click', () => this.generatePassword())
-    }
-
-    // Kopieren Button
-    const copyBtn = document.querySelector(CONFIG.UI.copyBtnSelector)
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => this.copyPassword())
-    }
-
-    // Theme Toggle
-    const themeToggle = document.querySelector(CONFIG.UI.themeToggleSelector)
-    if (themeToggle) {
-      themeToggle.addEventListener('click', () => this.toggleTheme())
-    }
-
-    // Keyboard Shortcuts
-    document.addEventListener('keydown', e => this.handleKeyboardShortcuts(e))
-  }
-
-  /**
-   * Aktualisiert UI Elemente
-   */
-  updateUIElements () {
-    // Setze initialen Fokus auf Passwortfeld
-    const passwordInput = document.querySelector(CONFIG.UI.passwordInputSelector)
-    if (passwordInput) {
-      passwordInput.focus()
-    }
-  }
-
-  /**
-   * Generiert ein neues Passwort
-   */
-  generatePassword () {
-    try {
-      if (!this.passwordGenerator) {
-        throw new Error('PasswordGenerator nicht initialisiert')
-      }
-
-      // Aktuelle Einstellungen abrufen
-      const settings = this.settingsService.getSettings()
-      this.passwordGenerator.updateOptions(settings)
-
-      // Passwort generieren
-      const password = this.passwordGenerator.generate()
-
-      // UI aktualisieren
-      this.displayPassword(password)
-
-      // Event auslösen
-      Events.emitPasswordGenerated({
-        password,
-        options: this.passwordGenerator.getOptions()
+      generateBtn.addEventListener('click', () => {
+        eventManager.emit('ui:generate')
       })
-    } catch (error) {
-      this.showError(error.message)
     }
+
+    const copyBtn = this.dom.query(CONFIG.UI.copyBtnSelector)
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => this.handleCopyClick())
+    }
+
+    const themeToggle = this.dom.query(CONFIG.UI.themeToggleSelector)
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        eventManager.emit('ui:toggleTheme')
+      })
+    }
+
+    this.setupSettingsListeners()
+
+    this.dom.addEventListener('keydown', e => this.handleKeyboardShortcuts(e))
   }
 
-  /**
-   * Zeigt das generierte Passwort an
-   * @param {string} password - Das Passwort
-   */
-  displayPassword (password) {
-    const passwordInput = document.querySelector(CONFIG.UI.passwordInputSelector)
-    if (passwordInput) {
-      passwordInput.value = password
+  setupSettingsListeners () {
+    const lengthSlider = this.dom.query(CONFIG.UI.lengthSliderSelector)
+    if (lengthSlider) {
+      lengthSlider.addEventListener('input', e => {
+        const value = parseInt(e.target.value)
+        this.updateLengthDisplay(value)
+        eventManager.emit('ui:settingChanged', { key: 'length', value })
+      })
     }
+
+    const options = ['uppercase', 'lowercase', 'numbers', 'symbols', 'ambiguous']
+    options.forEach(option => {
+      const checkbox = this.dom.query(CONFIG.UI[`${option}Selector`])
+      if (checkbox) {
+        checkbox.addEventListener('change', e => {
+          eventManager.emit('ui:settingChanged', {
+            key: option,
+            value: e.target.checked
+          })
+        })
+      }
+    })
   }
 
-  /**
-   * Kopiert das Passwort in die Zwischenablage
-   */
-  async copyPassword () {
-    const passwordInput = document.querySelector(CONFIG.UI.passwordInputSelector)
-    const copyBtn = document.querySelector(CONFIG.UI.copyBtnSelector)
-
+  handleCopyClick () {
+    const passwordInput = this.dom.query(CONFIG.UI.passwordInputSelector)
     if (!passwordInput || !passwordInput.value) {
       this.showError('Kein Passwort zum Kopieren vorhanden')
       return
     }
 
+    this.copyToClipboard(passwordInput.value)
+  }
+
+  async copyToClipboard (password) {
     try {
-      // Selektiere das Passwort
-      passwordInput.select()
-      passwordInput.setSelectionRange(0, 99999)
-
-      // Kopiere in Zwischenablage
-      await navigator.clipboard.writeText(passwordInput.value)
-
-      // Visuelle Rückmeldung
-      if (copyBtn) {
-        const originalContent = copyBtn.innerHTML
-        copyBtn.innerHTML = CONFIG.ICONS.check
-
-        setTimeout(() => {
-          copyBtn.innerHTML = originalContent
-        }, 1500)
-      }
-
-      // Event auslösen
-      Events.emitPasswordCopied({
-        password: passwordInput.value,
-        timestamp: Date.now()
-      })
+      await navigator.clipboard.writeText(password)
+      this.showCopyFeedback()
+      Events.emitPasswordCopied({ password, timestamp: Date.now() })
     } catch (error) {
       this.showError('Fehler beim Kopieren des Passworts')
     }
   }
 
-  /**
-   * Schaltet das Theme um
-   */
-  toggleTheme () {
-    if (this.themeManager) {
-      this.themeManager.toggleTheme()
-    }
-  }
-
-  /**
-   * Handelt Keyboard Shortcuts
-   * @param {KeyboardEvent} e - Keyboard Event
-   */
   handleKeyboardShortcuts (e) {
-    // Strg+R: Neugenerieren
     if (e.ctrlKey && e.key === 'r') {
       e.preventDefault()
-      this.generatePassword()
+      eventManager.emit('ui:generate')
     }
 
-    // Strg+C: Kopieren (wenn Passwortfeld fokussiert ist)
-    if (e.ctrlKey && e.key === 'c' && document.activeElement.id === 'password') {
+    const activeId = document.activeElement ? document.activeElement.id : ''
+    if (e.ctrlKey && e.key === 'c' && activeId === 'password') {
       e.preventDefault()
-      this.copyPassword()
+      this.handleCopyClick()
     }
 
-    // Strg+D: Theme Toggle
     if (e.ctrlKey && e.key === 'd') {
       e.preventDefault()
-      this.toggleTheme()
+      eventManager.emit('ui:toggleTheme')
     }
   }
 
-  /**
-   * Zeigt eine Fehlermeldung an
-   * @param {string} message - Fehlermeldung
-   */
+  updateUIElements () {
+    const passwordInput = this.dom.query(CONFIG.UI.passwordInputSelector)
+    if (passwordInput) {
+      passwordInput.focus()
+    }
+  }
+
+  // === Render-Methoden ===
+
+  displayPassword (password) {
+    const passwordInput = this.dom.query(CONFIG.UI.passwordInputSelector)
+    if (passwordInput) {
+      passwordInput.value = password
+    }
+  }
+
+  updateThemeIcon (theme) {
+    const themeToggle = this.dom.query(CONFIG.UI.themeToggleSelector)
+    if (themeToggle) {
+      themeToggle.innerHTML = theme === 'dark' ? CONFIG.ICONS.sun : CONFIG.ICONS.moon
+    }
+  }
+
+  updateSliderValue (value) {
+    const lengthSlider = this.dom.query(CONFIG.UI.lengthSliderSelector)
+    const lengthValue = this.dom.query(CONFIG.UI.lengthValueSelector)
+
+    if (lengthSlider) {
+      lengthSlider.value = value
+    }
+    if (lengthValue) {
+      lengthValue.textContent = value
+    }
+  }
+
+  updateLengthDisplay (value) {
+    const lengthValue = this.dom.query(CONFIG.UI.lengthValueSelector)
+    if (lengthValue) {
+      lengthValue.textContent = value
+    }
+  }
+
+  setCheckbox (key, checked) {
+    const checkbox = this.dom.query(CONFIG.UI[`${key}Selector`])
+    if (checkbox) {
+      checkbox.checked = checked
+    }
+  }
+
+  applySettings (settings) {
+    this.updateSliderValue(settings.length)
+
+    const options = ['uppercase', 'lowercase', 'numbers', 'symbols', 'ambiguous']
+    options.forEach(option => {
+      this.setCheckbox(option, settings[option])
+    })
+  }
+
   showError (message) {
-    // Optional: Toast Notification implementieren
-    alert(message) // Einfache Implementierung
+    console.error(message) // eslint-disable-line no-console
+    alert(message)
   }
 
-  /**
-   * Setzt den Password Generator
-   * @param {PasswordGenerator} generator - Die Generator Instanz
-   */
-  setPasswordGenerator (generator) {
-    this.passwordGenerator = generator
-  }
+  showCopyFeedback () {
+    const copyBtn = this.dom.query(CONFIG.UI.copyBtnSelector)
+    if (copyBtn) {
+      const originalContent = copyBtn.innerHTML
+      copyBtn.innerHTML = CONFIG.ICONS.check
 
-  /**
-   * Setzt den Theme Manager
-   * @param {ThemeManager} manager - Der Manager Instanz
-   */
-  setThemeManager (manager) {
-    this.themeManager = manager
-  }
-
-  /**
-   * Setzt den Settings Service
-   * @param {SettingsService} service - Der Service Instanz
-   */
-  setSettingsService (service) {
-    this.settingsService = service
+      setTimeout(() => {
+        copyBtn.innerHTML = originalContent
+      }, 1500)
+    }
   }
 }

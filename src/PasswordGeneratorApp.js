@@ -1,12 +1,12 @@
 /**
  * Hauptanwendung - Passwortgenerator
- * Zentrale Klasse die alle Komponenten koordiniert
+ * Zentrale Event-Orchestration zwischen allen Komponenten
  */
-import { CONFIG } from './config/index.js'
 import { PasswordGenerator } from './classes/PasswordGenerator.js'
 import { ThemeManager } from './services/ThemeManager.js'
 import { SettingsService } from './services/SettingsService.js'
 import { UIManager } from './services/UIManager.js'
+import { Events, eventManager } from './events/manager.js'
 
 export class PasswordGeneratorApp {
   constructor () {
@@ -17,123 +17,93 @@ export class PasswordGeneratorApp {
     this.isInitialized = false
   }
 
-  /**
-   * Startet die Anwendung
-   */
   async start () {
-    // Initialisiere alle Services
     this.initializeServices()
-
-    // Setze Beziehungen zwischen Services
-    this.setupServiceRelationships()
-
-    // Initialisiere UI
+    this.setupEventOrchestration()
     this.initializeUI()
-
     this.isInitialized = true
   }
 
-  /**
-   * Initialisiert alle Services
-   */
   initializeServices () {
-    // Settings Service zuerst (benötigt für UI)
     this.settingsService = new SettingsService()
-
-    // Theme Manager
     this.themeManager = new ThemeManager()
-
-    // Password Generator
     this.passwordGenerator = new PasswordGenerator()
-
-    // UI Manager
     this.uiManager = new UIManager()
   }
 
-  /**
-   * Setzt Beziehungen zwischen Services
-   */
-  setupServiceRelationships () {
-    // UI Manager bekommt Zugriff auf andere Services
-    this.uiManager.setPasswordGenerator(this.passwordGenerator)
-    this.uiManager.setThemeManager(this.themeManager)
-    this.uiManager.setSettingsService(this.settingsService)
+  setupEventOrchestration () {
+    eventManager.on('ui:generate', () => this.handleGenerate())
+    eventManager.on('ui:toggleTheme', () => this.handleToggleTheme())
+    eventManager.on('ui:settingChanged', (data) => this.handleSettingChanged(data))
+
+    Events.onSettingsChanged((data) => this.handleSettingsChanged(data))
+    Events.onThemeChanged((data) => this.handleThemeChanged(data))
   }
 
-  /**
-   * Initialisiert die Benutzeroberfläche
-   */
   initializeUI () {
-    // Setze Event Listener für UI Interaktionen
-    this.setupUIEventListeners()
-
-    // Aktualisiere UI mit geladenen Einstellungen
-    this.settingsService.applySettings()
-
-    // Generiere erstes Passwort
-    this.generateInitialPassword()
-  }
-
-  /**
-   * Setzt UI Event Listener
-   */
-  setupUIEventListeners () {
-    // Event Listener für Settings Änderungen
-    document.addEventListener('change', e => {
-      if (this.isSettingsChange(e)) {
-        this.handleSettingsChange(e)
-      }
-    })
-  }
-
-  /**
-   * Prüft ob es sich um eine Einstellungsänderung handelt
-   * @param {Event} e - Das Event
-   * @returns {boolean}
-   */
-  isSettingsChange (e) {
-    const selectors = [
-      CONFIG.UI.lengthSliderSelector,
-      CONFIG.UI.uppercaseSelector,
-      CONFIG.UI.lowercaseSelector,
-      CONFIG.UI.numbersSelector,
-      CONFIG.UI.symbolsSelector,
-      CONFIG.UI.ambiguousSelector
-    ]
-
-    return selectors.some(selector => e.target.matches(selector))
-  }
-
-  /**
-   * Handlet Einstellungsänderungen
-   * @param {Event} e - Das Event
-   */
-  handleSettingsChange (e) {
     const settings = this.settingsService.getSettings()
-    this.passwordGenerator.updateOptions(settings)
-    const password = this.passwordGenerator.generate()
-    this.uiManager.displayPassword(password)
+
+    this.uiManager.applySettings(settings)
+    this.applyTheme(this.themeManager.getCurrentTheme())
+    this.generateAndDisplayPassword()
   }
 
-  /**
-   * Generiert das initiale Passwort
-   */
-  generateInitialPassword () {
-    const settings = this.settingsService.getSettings()
-    this.passwordGenerator.updateOptions(settings)
-    const password = this.passwordGenerator.generate()
+  handleGenerate () {
+    this.generateAndDisplayPassword()
+  }
 
-    this.uiManager.displayPassword(password)
+  handleToggleTheme () {
+    this.themeManager.toggleTheme()
+  }
+
+  handleSettingChanged (data) {
+    this.settingsService.updateSetting(data.key, data.value)
+  }
+
+  handleSettingsChanged (data) {
+    if (data.setting === 'length') {
+      this.uiManager.updateSliderValue(data.newValue)
+    } else if (['uppercase', 'lowercase', 'numbers', 'symbols', 'ambiguous'].includes(data.setting)) {
+      this.uiManager.setCheckbox(data.setting, data.newValue)
+    }
+
+    if (data.action === 'import' || data.action === 'reset') {
+      this.uiManager.applySettings(data.settings)
+    }
+
+    this.generateAndDisplayPassword()
+  }
+
+  handleThemeChanged (data) {
+    this.applyTheme(data.theme)
+  }
+
+  applyTheme (theme) {
+    const htmlElement = document.documentElement
+    htmlElement.setAttribute('data-theme', theme)
+    this.uiManager.updateThemeIcon(theme)
+  }
+
+  generateAndDisplayPassword () {
+    try {
+      const settings = this.settingsService.getSettings()
+      this.passwordGenerator.updateOptions(settings)
+      const password = this.passwordGenerator.generate()
+      this.uiManager.displayPassword(password)
+
+      Events.emitPasswordGenerated({
+        password,
+        options: this.passwordGenerator.getOptions()
+      })
+    } catch (error) {
+      this.uiManager.showError(error.message)
+    }
   }
 }
 
 // Globale Anwendung Instanz
 let appInstance = null
 
-/**
- * Gibt die globale Anwendung Instanz zurück
- * @returns {PasswordGeneratorApp}
- */
 export function getApp () {
   if (!appInstance) {
     appInstance = new PasswordGeneratorApp()
@@ -141,9 +111,6 @@ export function getApp () {
   return appInstance
 }
 
-/**
- * Startet die Anwendung (wird direkt aufgerufen)
- */
 export async function startApp () {
   const app = getApp()
   await app.start()
